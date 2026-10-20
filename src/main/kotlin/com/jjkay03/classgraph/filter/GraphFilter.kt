@@ -10,4 +10,5 @@ data class GraphFilter(
     val search: String,
     val focus: ClassNode?,
     val focusDepth: Int,
+    val minLinks: Int = 0,
 )

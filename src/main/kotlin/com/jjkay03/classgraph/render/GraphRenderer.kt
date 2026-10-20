@@ -43,6 +43,8 @@ class GraphRenderer {
         val vp = frame.viewport
         val d = frame.display
         val focus = frame.hovered
+        // Big graphs get fainter links so hubs and clusters stay readable instead of one grey blob.
+        val density = (DENSE_EDGE_COUNT / frame.graph.edges.size.coerceAtLeast(1).toDouble()).coerceIn(0.35, 1.0)
 
         for (e in frame.graph.edges) {
             val touches = focus != null && (e.from === focus || e.to === focus)
@@ -53,8 +55,8 @@ class GraphRenderer {
             }
             val alpha = when {
                 touches -> 235
-                focus != null -> 14
-                else -> 100
+                focus != null -> (FADED_LINK_ALPHA * density).roundToInt()
+                else -> (BASE_LINK_ALPHA * density).roundToInt()
             }
             val cx1 = vp.screenX(e.from.x)
             val cy1 = vp.screenY(e.from.y)
@@ -128,7 +130,7 @@ class GraphRenderer {
         val oldComposite = g.composite
         g.translate(sx, sy)
         g.scale(scale, scale)
-        if (!lit) g.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.15f)
+        if (!lit) g.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, FADED_ICON_OPACITY)
         icon.paintIcon(null, g, -icon.iconWidth / 2, -icon.iconHeight / 2)
         g.transform = oldTransform
         g.composite = oldComposite
@@ -157,7 +159,11 @@ class GraphRenderer {
         val DEFAULT_NODE = JBColor(0x6B6B6B, 0xA8A8A8)
         val LABEL = JBColor(0x222222, 0xDDDDDD)
         const val NODE_ALPHA = 128 // 50% opacity circles
-        const val NODE_FADED_ALPHA = 20
+        const val NODE_FADED_ALPHA = 70 // hovering dims unrelated nodes only gently
+        const val BASE_LINK_ALPHA = 100
+        const val FADED_LINK_ALPHA = 55
+        const val DENSE_EDGE_COUNT = 1500.0
+        const val FADED_ICON_OPACITY = 0.5f
         const val MIN_ICON_RADIUS = 5.0
         const val ICON_FILL = 1.5 // icon diameter as a multiple of the node radius
     }

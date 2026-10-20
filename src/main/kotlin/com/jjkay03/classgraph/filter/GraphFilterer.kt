@@ -21,7 +21,8 @@ object GraphFilterer {
         val keep = focus?.let { neighbourhood(it, adjacency, filter.focusDepth) }
         val nodes = matching.filter { node ->
             (filter.showOrphans || adjacency.containsKey(node) || node === focus) &&
-                (keep == null || node in keep)
+                (keep == null || node in keep) &&
+                (filter.minLinks <= 0 || node === focus || (adjacency[node]?.size ?: 0) >= filter.minLinks)
         }
 
         val nodeSet = nodes.toHashSet()

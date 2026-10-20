@@ -1,12 +1,18 @@
 package com.jjkay03.classgraph.analysis
 
+import com.intellij.concurrency.JobLauncher
 import com.intellij.openapi.module.ModuleUtilCore
+import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.progress.ProgressIndicatorProvider
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiManager
+import com.jjkay03.classgraph.model.ClassEdge
 import com.jjkay03.classgraph.model.ClassGraph
 import org.jetbrains.uast.UFile
 import org.jetbrains.uast.toUElementOfType
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Scans project sources via UAST (identical for Java and Kotlin). Must run inside a read action. */
 object ClassGraphBuilder {
@@ -24,14 +30,22 @@ object ClassGraphBuilder {
             collector.collectFile(uFile, file, module)
         }
 
-        val edges = EdgeCollector(collector.nodes)
-        val total = collector.uClasses.size
-        var done = 0
-        for ((qualified, uClass) in collector.uClasses) {
+        // Resolving every call is the expensive part, so classes are analysed in parallel. Each class only produces
+        // edges starting at itself, so the per-class results never overlap and can simply be concatenated.
+        val entries = collector.uClasses.entries.toList()
+        val results = ConcurrentLinkedQueue<List<ClassEdge>>()
+        val done = AtomicInteger(0)
+        val indicator = ProgressIndicatorProvider.getGlobalProgressIndicator() ?: EmptyProgressIndicator()
+        val completed = JobLauncher.getInstance().invokeConcurrentlyUnderProgress(entries, indicator) { (qualified, uClass) ->
             ProgressManager.checkCanceled()
-            onProgress("Analysing classes (${++done}/$total)")
-            edges.collect(collector.nodes.getValue(qualified), uClass)
+            val collected = EdgeCollector(collector.nodes)
+            collected.collect(collector.nodes.getValue(qualified), uClass)
+            results.add(collected.result())
+            onProgress("Analysing classes (${done.incrementAndGet()}/${entries.size})")
+            true
         }
-        return ClassGraph(collector.nodes.values.toList(), edges.result())
+        ProgressManager.checkCanceled()
+        check(completed) { "Class analysis was interrupted" }
+        return ClassGraph(collector.nodes.values.toList(), results.flatten())
     }
 }

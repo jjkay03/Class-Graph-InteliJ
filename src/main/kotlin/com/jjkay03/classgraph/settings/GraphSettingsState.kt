@@ -9,6 +9,7 @@ class GraphSettingsState {
     var search: String = ""
     var showOrphans: Boolean = true
     var kinds: MutableList<String> = EdgeKind.entries.filter { it.defaultEnabled }.map { it.name }.toMutableList()
+    var minLinks: Int = 0
     var localGraph: Boolean = false
     var localDepth: Int = 1
 

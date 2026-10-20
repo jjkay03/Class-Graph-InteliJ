@@ -38,6 +38,10 @@ internal fun Panel.filtersSection(settings: GraphSettings) {
             s.showOrphans = it
             settings.changed()
         }
+        sliderRow("Min links", "Hide classes with fewer links than this. Raise it on big projects to keep only the well-connected classes.", 0.0, 10.0, 1.0, s.minLinks.toDouble()) {
+            s.minLinks = it.toInt()
+            settings.changed()
+        }
         EdgeKind.entries.forEach { kind ->
             toggleRow(kind.label, linkTips.getValue(kind), kind in s.enabledKinds(), kind.color) {
                 s.setKind(kind, it)

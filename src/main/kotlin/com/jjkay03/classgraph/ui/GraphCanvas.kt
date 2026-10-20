@@ -12,11 +12,16 @@ import com.jjkay03.classgraph.render.GraphRenderer
 import com.jjkay03.classgraph.render.LegendEntry
 import com.jjkay03.classgraph.render.Viewport
 import com.jjkay03.classgraph.settings.GraphSettings
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
+import com.intellij.ui.JBColor
+import com.intellij.util.concurrency.AppExecutorUtil
 import java.awt.Cursor
 import java.awt.Graphics
 import java.awt.Graphics2D
 import javax.swing.JPanel
 import javax.swing.Timer
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /** Holds graph/view state and wires settings → filter → layout → renderer. Input lives in [GraphMouseHandler]. */
@@ -35,6 +40,8 @@ class GraphCanvas(private val settings: GraphSettings) : JPanel() {
     private var gentleRestart = false
     private var lastFilter: GraphFilter? = null
     private var lastForces: Forces? = null
+    @Volatile private var layoutGeneration = 0
+    @Volatile private var laying = false
 
     var onStatsChanged: (() -> Unit)? = null
     var onGraphLoaded: (() -> Unit)? = null
@@ -45,6 +52,8 @@ class GraphCanvas(private val settings: GraphSettings) : JPanel() {
     private companion object {
         const val NEW_NODE_SPREAD = 80.0
         const val GENTLE_ENERGY = 0.3
+        const val SYNC_LAYOUT_NODES = 300 // up to this many nodes the layout is computed on the UI thread
+        const val LAYOUT_BUDGET_MS = 4000L
     }
 
     init {
@@ -70,6 +79,7 @@ class GraphCanvas(private val settings: GraphSettings) : JPanel() {
         } else {
             hovered = null
             viewport.resetCentering()
+            spreadStartPositions(newGraph.nodes)
         }
         graph = newGraph
         activeNode = resolveActiveNode()
@@ -112,8 +122,16 @@ class GraphCanvas(private val settings: GraphSettings) : JPanel() {
         val filter = currentFilter()
         if (filter != lastFilter) {
             lastFilter = filter
+            val previous = visible.nodes.toHashSet()
             visible = GraphFilterer.apply(graph, filter)
-            if (gentleRestart) layout.reheat(GENTLE_ENERGY) else layout.restart()
+            val appeared = visible.nodes.any { it !in previous }
+            if (appeared && !gentleRestart) {
+                placeAhead()
+            } else {
+                layoutGeneration++
+                laying = false
+                if (gentleRestart) layout.reheat(GENTLE_ENERGY) else layout.restart()
+            }
             gentleRestart = false
             onStatsChanged?.invoke()
         }
@@ -124,6 +142,40 @@ class GraphCanvas(private val settings: GraphSettings) : JPanel() {
             lastForces = forces
         }
         repaint()
+    }
+
+    /**
+     * Function to compute the layout of the visible graph before showing it, so nodes appear where they belong
+     * instead of flying in with every link on screen. Big graphs are laid out on a background thread.
+     */
+    private fun placeAhead() {
+        val nodes = visible.nodes
+        val edges = visible.edges
+        val forces = currentForces()
+        val generation = ++layoutGeneration
+        layout.rest()
+        val work = ForceLayout()
+        if (nodes.size <= SYNC_LAYOUT_NODES) {
+            work.settleNow(nodes, edges, forces, LAYOUT_BUDGET_MS)
+            laying = false
+            return
+        }
+        laying = true
+        AppExecutorUtil.getAppExecutorService().execute {
+            work.settleNow(nodes, edges, forces, LAYOUT_BUDGET_MS) { generation != layoutGeneration }
+            ApplicationManager.getApplication().invokeLater({
+                if (generation == layoutGeneration) {
+                    laying = false
+                    repaint()
+                }
+            }, ModalityState.any())
+        }
+    }
+
+    /** Function to spread the random start positions of a freshly scanned graph, so big graphs start less crowded. */
+    private fun spreadStartPositions(nodes: List<ClassNode>) {
+        val factor = sqrt(nodes.size / 150.0).coerceAtLeast(1.0)
+        nodes.forEach { it.x *= factor; it.y *= factor }
     }
 
     /** Function to find the topmost node at a screen point, or null when there is none. */
@@ -149,7 +201,7 @@ class GraphCanvas(private val settings: GraphSettings) : JPanel() {
     /** Function to build the graph filter from the current settings. */
     private fun currentFilter(): GraphFilter {
         val s = settings.values
-        return GraphFilter(s.enabledKinds(), s.showOrphans, s.search.trim(), if (s.localGraph) activeNode else null, s.localDepth)
+        return GraphFilter(s.enabledKinds(), s.showOrphans, s.search.trim(), if (s.localGraph) activeNode else null, s.localDepth, s.minLinks)
     }
 
     /** Function to read the force sliders from the current settings. */
@@ -174,7 +226,7 @@ class GraphCanvas(private val settings: GraphSettings) : JPanel() {
 
     /** Function to advance the physics one frame while the canvas is visible and not yet settled. */
     private fun tick() {
-        if (!isShowing || layout.settled) return
+        if (!isShowing || laying || layout.settled) return
         layout.step(visible.nodes, visible.edges, currentForces())
         repaint()
     }
@@ -182,6 +234,12 @@ class GraphCanvas(private val settings: GraphSettings) : JPanel() {
     /** Function to draw the current frame. */
     override fun paintComponent(g: Graphics) {
         viewport.centerOnce(width, height)
+        if (laying) {
+            g.color = JBColor.GRAY
+            val text = "Laying out ${visible.nodes.size} classes…"
+            g.drawString(text, (width - g.fontMetrics.stringWidth(text)) / 2, height / 2)
+            return
+        }
         renderer.paint(g as Graphics2D, width, height, GraphRenderer.Frame(visible, viewport, hovered, activeNode, settings.values))
     }
 }
