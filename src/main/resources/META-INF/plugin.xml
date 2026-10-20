@@ -1,0 +1,40 @@
+<idea-plugin require-restart="true">
+    <id>com.jjkay03.classgraph</id>
+    <name>Class Graph</name>
+    <vendor url="https://jjkay03.com">jjkay03</vendor>
+
+    <description><![CDATA[
+        <p>Node graph of your Java and Kotlin project.</p>
+        <p>Every class (and every Kotlin file) is a node; links show how they relate. Drag nodes, zoom, hover to
+        highlight connections, and click a node to open its source.</p>
+        <h3>Features</h3>
+        <ul>
+            <li>Links for inheritance, fields, method signatures, instantiation and method calls &mdash; switch each on or off.</li>
+            <li>Local graph: follow the file open in the editor and show only its neighbourhood, up to 5 links deep.</li>
+            <li>Search (<code>module:</code>, <code>package:</code>, <code>name:</code>, <code>kind:</code>) and custom color groups.</li>
+            <li>Color by package, module or kind, with a legend; node icons match the IDE's class icons.</li>
+            <li>Obsidian-like settings: arrows, text fade, node size, link thickness and the four force sliders.</li>
+            <li>Optional auto-refresh while you edit code.</li>
+        </ul>
+        <p>Open it from the <b>Class Graph</b> tool window on the right.</p>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <h4>1.0</h4>
+        <ul>
+            <li>First release.</li>
+        </ul>
+    ]]></change-notes>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.java</depends>
+    <depends>org.jetbrains.kotlin</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Class Graph"
+                    anchor="right"
+                    secondary="false"
+                    icon="/icons/classGraph.svg"
+                    factoryClass="com.jjkay03.classgraph.ClassGraph"/>
+    </extensions>
+</idea-plugin>
